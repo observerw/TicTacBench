@@ -18,6 +18,12 @@ post-PnR evaluation.
 > **Paper:**
 > [TicTacBench: Benchmarking Timing Closure Capabilities of Coding Agents](assets/TicTacBench.pdf)
 
+> **Special thanks:**
+>
+> [RTLLM: An Open-Source Benchmark for Design RTL Generation with Large Language Model](https://github.com/hkust-zhiyao/RTLLM)
+>
+> [RTL-OPT: A Benchmark for RTL Code Optimization](https://github.com/hkust-zhiyao/RTL-OPT)
+
 ## Highlights
 
 - Post-PnR timing closure is the primary target, rather than a synthesis-only
