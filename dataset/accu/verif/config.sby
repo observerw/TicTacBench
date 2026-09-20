@@ -1,0 +1,17 @@
+[options]
+mode bmc
+depth 6
+
+[engines]
+btor btormc
+
+[script]
+read -formal -sv suboptimal.v
+read -formal -sv optimized.v
+read -formal -sv wrapper.sv
+prep -top wrapper
+
+[files]
+suboptimal.v
+optimized.v
+wrapper.sv

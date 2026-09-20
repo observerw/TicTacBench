@@ -1,0 +1,2 @@
+SBY 20:30:26 [config] Removing directory '/home/wbw/workspace/timing-bench/dataset/curated/accu/verif/config'.
+SBY 20:30:26 [config] Copy '/home/wbw/workspace/timing-bench/dataset/curated/accu/verif/suboptimal.v' to '/home/wbw/workspace/timing-bench/dataset/curated/accu/verif/config/src/suboptimal.v'.

@@ -1,0 +1,5 @@
+{
+  "id": "multi_pipe_4bit",
+  "dataset": "RTLLM",
+  "design_name": "multi_pipe_4bit"
+}

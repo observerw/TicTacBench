@@ -1,0 +1,4 @@
+SBY 22:55:18 [verif/config] Removing directory '/home/wbw/workspace/timing-bench/dataset/curated/adder_32bit/verif/config'.
+SBY 22:55:18 [verif/config] Copy '/home/wbw/workspace/timing-bench/dataset/curated/adder_32bit/suboptimal.v' to '/home/wbw/workspace/timing-bench/dataset/curated/adder_32bit/verif/config/src/suboptimal.v'.
+SBY 22:55:18 [verif/config] Copy '/home/wbw/workspace/timing-bench/dataset/curated/adder_32bit/optimized.v' to '/home/wbw/workspace/timing-bench/dataset/curated/adder_32bit/verif/config/src/optimized.v'.
+SBY 22:55:18 [verif/config] Copy '/home/wbw/workspace/timing-bench/dataset/curated/adder_32bit/wrapper.sv' to '/home/wbw/workspace/timing-bench/dataset/curated/adder_32bit/verif/config/src/wrapper.sv'.

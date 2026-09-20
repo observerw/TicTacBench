@@ -1,0 +1,7 @@
+{
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 5,
+  "PNR_SDC_FILE": "dir::pnr.sdc",
+  "SIGNOFF_SDC_FILE": "dir::pnr.sdc",
+  "CLOCK_UNCERTAINTY_CONSTRAINT": 0
+}

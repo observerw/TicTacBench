@@ -1,0 +1,627 @@
+          TicTacBench: Benchmarking Timing Closure
+                Capabilities of Coding Agents
+              Bowei Wang∗ , Zhigang Fang∗ , Zhijie Yang† , Renzhi Chen‡ , Shanshan Li∗§ , and Lei Wang†§
+                       ∗ Computer Department, National University of Defense Technology, Changsha, China
+
+                                        {wangbowei, fangzhigang, shanshanli}@nudt.edu.cn
+                             † Defense Innovation Institute, Academy of Military Science, Beijing, China
+
+                                        yangzhijie.nudt@foxmail.com, leiwang@nudt.edu.cn
+                                  ‡ Intelligent Microelectronics Center, Qiyuan Lab, Beijing, China
+
+                                                      chenrenzhi@qiyuanlab.com
+
+
+   Abstract—Recent advances in large language models (LLMs)                                      (a) Closure prediction                      (b) Ranking prediction
+have led to the emergence of coding agents capable of performing
+
+
+
+                                                                       Post-PnR true label
+                                                                                                     True      False
+complex engineering tasks, including register-transfer level (RTL)                            Pass positive   negative    Pre Setup WS         62.1%             37.9%
+design and optimization. Existing RTL benchmarks mainly                                             31.8%      5.4%
+evaluate functional correctness and performance, power, and                                                                                     Same            Different
+area (PPA) of the generated RTL designs, leaving agents’ ability                                     False    True
+                                                                                             Failed positive negative Pre Setup WNS           48.3%             51.7%
+for timing closure under-evaluated. We propose TicTacBench, a                                       27.6% 35.1%
+benchmark specifically designed to evaluate coding agents’ capa-                                     Pass       Fail                     0    20      40   60      80       100
+bilities for RTL-level timing closure under post-place-and-route                                   Pre-PnR prediction                        Winner agreement (%)
+(post-PnR) evaluation. TicTacBench contains 30 diverse tasks,
+each provided with a suboptimal RTL design, realistic timing con-
+                                                                          Fig. 1. Pre-PnR timing metrics are unreliable for post-PnR timing closure. (a)
+straints, functional equivalence verification, and timing reports.
+                                                                          Treating pre-PnR closure as a prediction of post-PnR closure produces high
+With over 300 runs of coding agents driven by 8 frontier LLMs,            false positives: designs that appear to close timing before PnR often fail after
+we find that even the best agent can only close 53.3% of tasks            physical implementation. (b) Pre-PnR metrics are unreliable for evaluation.
+with 7.18% area-delay product (ADP) degradation and 8.83%                 The agent selected as best before PnR disagrees with the post-PnR.
+energy-delay-squared product (EDDP) improvement on average.
+We identify common failure categories that explain why agents
+fail to close timing. Then we propose TicTacSkill, a new method
+that guides agents to follow standard timing-closure procedures           Further, RTLLM 2.0 [7] requires generated RTL to pass logic
+and improves the Timing Closure Rate by 9%. These results                 synthesis and extracts reports, using Worst Negative Slack
+suggest that while coding agents have made significant progress           (WNS), cells, and power as additional PPA metrics.
+in RTL design, their timing-closure capability still has substantial         However, agents’ capability in timing closure remains un-
+room for improvement. Anonymized code and data are available
+at https://anonymous.4open.science/r/tictacbench-anon-F3C0.               derexplored. Timing closure refers to the process of optimizing
+   Index Terms—Electronic Design Automation, Register-                    a hardware design to reduce critical-path negative slack and
+Transfer Level Design, Large Language Models, Timing                      eliminate timing violations. A design that does not close
+Closure, Evaluation Framework.                                            timing remains unusable even if it is functionally correct and
+                                                                          has competitive PPA. Existing PPA benchmarks report several
+                         I. I NTRODUCTION                                 pre-PnR timing metrics such as WNS and Total Negative
+   Recently, coding agents driven by large language models                Slack (TNS). However, determining whether a design closes
+(LLMs) have shown practical utility in complex engineering                timing requires post-place-and-route Static Timing Analysis
+workflows [1]. This progress has led to growing interest in               (post-PnR STA). As Figure 1 shows, through the statistics
+applying them to full hardware implementation workflows.                  from Section IV, we find that using only pre-PnR WNS to
+Industrial EDA tools have adopted agent-based optimization,               judge post-PnR timing closure leads to a high false-positive
+such as Synopsys DSO.ai and Cadence Cerebrus AI Studio.                   rate and incorrect result rankings. This mismatch prevents us
+Researchers have explored LLM-based agents for RTL gener-                 from gaining insight into agent timing-closure capability from
+ation, debugging, and RTL optimization [2]–[5].                           existing benchmark results.
+   Prior studies [6]–[10] have developed several benchmarks                  Research questions. Given this gap, we expect a dedicated
+to evaluate functional correctness and PPA (Performance,                  evaluation to help answer the following research questions.
+Power, Area) of agent-generated/optimized RTL. For example,               RQ1: How capable are coding agents driven by frontier LLMs
+VerilogEvalV2 [6] provides specification prompts, checks the              at timing-closure tasks when evaluated with post-PnR STA?
+functional correctness of the generated RTL through sim-                  RQ2: What failure categories explain why agents fail to close
+ulation, and reports func-pass@k as the evaluation metric.                timing, indicating capability gaps? RQ3: How can we improve
+                                                                          agents’ timing-closure capability beyond the baseline setting?
+  § Corresponding authors.                                                   To address these questions, we propose TicTacBench (Tim-
+                                                                TABLE I
+                     C OMPARISON OF REPRESENTATIVE RTL BENCHMARKS FROM THE PERSPECTIVE OF AGENT- BASED TIMING CLOSURE .
+
+   Benchmark                     Task setting                    Input / output                  Validation artifacts             Timing-closure coverage
+ VerilogEval [11]                RTL generation              Prompt and target RTL                     Simulation             No SDC or post-PnR objective
+  RTLLM v2 [7]               RTL generation + QoR             Spec, tests, and RTL                   Cycle-accurate          QoR stress signal; no closure target
+  RTLBench [10]              RTL generation quality           Spec, tests, and RTL           Simulation, lint, LLM judge        No timing or PPA objective
+   RTL-Repo [8]           Project-scale RTL generation      Repo context and Verilog                  Code checks            No task-level SDC or timing repair
+ RTLRewriter [4]          RTL rewriting for early QoR        RTL context and rewrite            Functional equivalence           Logic-synthesis QoR only
+  RTL-OPT [12]               RTL QoR optimization         Suboptimal and optimized RTL                Equivalence                  PPA/QoR benchmark
+    CVDP [9]               Realistic RTL improvement     Project request and RTL update          Task-specific checks              Broad front-end tasks
+TicTacBench (ours)          Post-PnR timing closure      Suboptimal design, SDC, reports      Interface, function, latency   Post-PnR STA with timing metrics
+
+
+
+
+ing Closure through Agentic Coding Benchmark), a bench-                               failure categories grouped into RTL domain knowledge,
+mark to evaluate coding agent capabilities for RTL-level tim-                         RTL architecture design, and optimization flow, indicat-
+ing closure under post-PnR evaluation. TicTacBench contains                           ing specific capability gaps.
+30 diverse and challenging tasks, each provided with a subopti-                     • We propose TicTacSkill as a baseline method for timing
+mal RTL design, realistic timing constraints, functional equiva-                      closure tasks, exploring how agent capabilities can be
+lence verification, pre- and post-PnR STA reports, and explicit                       improved for post-PnR timing closure through guidance.
+task descriptions. During evaluation, agents can inspect the
+STA reports and run the provided tool set, then submit an                           II. B ENCHMARKING AGENT- BASED T IMING C LOSURE
+optimized RTL design. To answer these research questions, we                        In this section, we first review representative RTL bench-
+run more than 300 experiments with coding agents driven by 8                      marks, summarize their task settings and metrics, and analyze
+frontier LLMs on TicTacBench, collect agent trajectories, and                     why no single existing benchmark fully covers the design
+evaluate every optimized design with post-PnR STA. We report                      requirements needed to evaluate agent-based timing-closure
+four metrics that capture both timing success and physical cost:                  capability. Then, we revisit the definition and characteristics
+Timing Closure Rate, WNS improvement, EDDP (energy-                               of timing closure in real implementation flow, and formalize
+delay-squared product) improvement, and ADP (area-delay                           the concept of Agent-based Timing Closure (ATC) Task.
+product) improvement. We also conduct trajectory semantic
+analysis on the agent trajectories to identify agent capabilities                 A. Inspection of Current Benchmarks
+and failure categories. The results show that even the GPT-                          In this section, we review several representative benchmarks
+5.4-based agent can close only 53.3% of tasks. The optimized                      that are widely recognized, and summarize their task settings
+designs improve EDDP by 8.83% on average, but degrade                             and evaluation metrics in Table I. From the perspective of the
+ADP by 7.18% on average. The trajectory semantic analysis                         characteristics of ATC, we argue that no single existing bench-
+shows that failure categories vary across agents, indicating                      mark covers the design requirements needed to evaluate ATC
+gaps in RTL domain knowledge, RTL architecture choices,                           capability. This motivates us to introduce the TicTacBench.
+and optimization workflow capabilities.                                              Lack of Timing Target/Constraints. Existing PPA bench-
+   Based on these findings, we propose TicTacSkill, which                         marks do not expose timing as a reproducible, design-specific
+guides agents to use more suitable timing-closure procedures                      timing-closure target. Across RTLLM v2, RTL-OPT, CVDP,
+and improves the Timing Closure Rate by 9%. Together, these                       and RTLRewriter, the reported QoR results rely on logic-
+results show that coding agents still face a capability gap in                    synthesis artifacts that are not released as part of the task
+industrial hardware design tasks, and point to report-grounded                    artifacts. RTLLM used an aggressively high frequency of 0.1
+RTL reasoning, structural timing optimization, and flow-aware                     ns so that the synthesized designs always produced WNS,
+validation as promising directions for future research.                           turning timing into a stress signal rather than a meaningful
+   Our main contributions are as follows:                                         closure objective.
+   • We propose TicTacBench, to our knowledge the first                              Cycle-Accurate Verification Bias. Existing benchmarks
+     benchmark that makes post-PnR timing closure the pri-                        often rely on cycle-accurate testbenches that are stricter than
+     mary evaluation target for coding agents. It provides                        timing closure requires. For example, the width 8to16
+     a realistic and fair evaluation for measuring whether                        task in RTLLM checked valid_out == 0 after
+     coding agents can achieve real timing closure, a capability                  one #10 step and later required (data_out ==
+     largely absent from existing RTL benchmarks.                                 16’b1010000010100001 && valid_out == 1)
+   • We propose several timing-closure metrics that measure                       at another fixed checkpoint. As a result, cycle-accurate
+     both timing success and physical cost. We evaluate coding                    equivalence unnecessarily narrows the optimization space
+     agents driven by 8 frontier LLMs over more than 300                          available to the agent, making latency-changing optimizations
+     runs and show that even the best agent closes only half                      infeasible.
+     of tasks, with timing gains often accompanied by area                           Lack of Post-PnR STA Ground Truth. Most existing RTL
+     degradation.                                                                 benchmarks report timing outcomes only through synthesis-
+   • We analyze agent trajectories and identify 6 recurring                       stage QoR metrics such as WNS, TNS, or other PPA indica-
+                   TicTacBench
+              Sandboxed
+                            Validity & 
+
+             A     Task Artifacts
+                                       B     Agent Harness
+                                                                           C
+                                                                                   Workflow Guard
+                                                                                                                  D     Optimized Design 
+
+                                                                                                                        Evaluation
+
+                                                 LLM-Driven
+                       Finish Criteria
+
+                    Task Inputs
+                                                 Coding Agent                                                                      RTL-to-GDSII Flow
+                                                                           Must compilable & Synthesiable
+
+                                                                                Must align with suboptimal 
+
+                 .md        .v                                                    Must Pass Equiv Check
+
+                Task
+    Subopt.
+
+                                                                                                                                         Post-PnR STA
+               Prompt    Design                                                   Workflow Rules
+
+                                                          ToolSet
+                                                                               Pre-STA tool calls are limited
+
+
+                 .sdc                                                          Total execute steps are limited
+
+                           .rpt
+                                                         Pre STA Linting
+                                                                               Agent turns are limited before
+                                       Coding
+   Auto
+
+                          STA
+                                                       finishing the task
+              SDC File                 Agent     Run
+                         Reports                          Equiv Compile
+                                                                                                                                                  Power
+     Area
+
+                                                                                                                  Timing
+   Violation
+    WNS
+    Delay
+    Delay
+
+                                                                                                                  Closure     Delta       Delta   Metrics   Metrics
+                         Isolated
+
+                                              EDA Toolchains
+                         Agent
+
+                         Sandbox                                                Finish
+        Finish
+                          Evaluation Metrics
+                                                                               Rejected       Accepted
+
+
+Fig. 2. TicTacBench evaluation flow. The agent uses released task artifacts and tool set commands to submit optimized.v; valid candidates pass interface,
+function, and latency guards before post-PnR evaluation computes closure, WNS repair, power-delay trade-offs, and area-delay trade-offs.
+
+
+
+tors. These metrics cannot evaluate whether an agent can use                          task-specific requirements. Let U = {ucomp , uequiv , usta } be
+post-PnR timing feedback to drive further RTL-level repair.                           the agent’s minimal tool set, corresponding to compilation,
+                                                                                      equivalence verification, and pre-PnR STA, respectively. The
+B. Definition and Characteristics of Timing Closure                                   agent can be modeled as AU (x) = r′ , where the output is a
+   Timing closure refers to the process of refining a hardware                        new RTL design r′ . The goal of the task is, for each specific
+design to ensure the timing constraints of sequential elements,                       input instance, to start from a design r with violations and
+such as flip-flops, are satisfied under a target implementation                       produce an r′ that either achieves timing closure or moves
+environment [13]. Failing to achieve timing closure can lead to                       measurably closer to it under the same e and c.
+incorrect sampling or unstable behavior at the target frequency.
+The two classes of timing constraints that must be satisfied are                            III. B ENCHMARK C ONSTRUCTION AND E VALUATION
+as follows:                                                                              In this section, we describe how TicTacBench is constructed
+   Setup constraint tsetup : requires the data at the input to                        and how coding agents are evaluated. We then describe the
+remain stable at least tsetup before the active clock edge.                           evaluation flow and the post-PnR metrics used to measure
+   Hold constraint thold : requires the data at the input to                          timing closure, WNS repair, and the physical cost of each
+remain stable for at least thold after the active clock edge.                         optimized design.
+   Timing closure can be achieved through a variety of re-
+finement methods, including RTL microarchitectural adjust-                            A. Task Construction
+ments [14], logic synthesis optimization [15], clock-tree con-                           We curated candidate designs from RTLLM 2.0 [7] and
+struction and placement-and-routing refinement [16], and post-                        RTL-OPT [12] as they provide high-quality baseline RTL with
+PnR engineering change order (ECO) adjustments [17]. Mi-                              optimization headroom. We kept 25 out of 90 designs whose
+croarchitectural adjustments and logic synthesis optimization                         critical paths come from arithmetic, pipeline, or control logic.
+are typically used to satisfy setup constraints, whereas hold                         CDC and memory/storage-centered tasks are left to future
+repair often requires adjustments during the physical-design                          benchmark splits; small standalone modules are excluded
+stage. In this paper, we focus on enabling coding agents                              when they offer too little timing-optimization headroom.
+to resolve setup violations through RTL microarchitectural                               There are two kinds of ATC tasks in TicTacBench: latency-
+optimization, thereby achieving post-PnR setup timing closure.                        preserving tasks require the optimized design to have the same
+Hold violations usually require physical-level adjustments, and                       latency as the baseline, while latency-changeable tasks allow
+the available interventions at the RTL level are much more                            the optimized design to have explicitly required additional la-
+limited; we therefore leave them out of scope.                                        tency. We derived 5 latency-changeable tasks from the original
+   We formalize an ATC (Agent-based Timing Closure) task as                           tasks, encompassing total 30 tasks in the benchmark.
+x = (r, e, c, v, q, m), where r denotes the input RTL design; e
+denotes the implementation environment, including technology                          B. Evaluation Flow
+library, flow configuration, and timing-analysis corners that                            Figure 2 illustrates the agent harness and evaluation flow.
+affect timing analysis and optimization results; c denotes the                        The agent receives the task input and may inspect files, edit
+timing constraints, represented by SDC (Synopsys Design                               RTL, and run tools. The baseline post-PnR reports describe
+Constraints) files, which specify the target clock and timing                         the original failure, so the agent can localize the critical path
+assumptions under which r initially has setup violations in                           and reason from reports. During exploration, the agent runs
+e; v denotes the equivalence verification artifacts; q denotes                        in a sandboxed environment with the given minimal tool set.
+the released timing evidence available to the agent, including                        To keep runs resource-bounded and comparable, it may run
+baseline pre- and post-PnR reports; and m denotes any other                           the pre-PnR STA tool only a limited number of times, but
+                        (a) Closure rate                                                            (b) Avg. WNS%                                                       (f) RRF Rank
+               GPT                                                          53.3%     Dpsk-Pro                                                        55.9%
+              Kimi                                                 43.3%                  Kimi                                                     53.0%                 GPT-5.4
+                                                                                                                                                                           1/3/5/1
+            Claude                                               41.4%                     GPT                                                 48.7%
+          Dpsk-Pro                                              40.0%                Dpsk-Flash                                            44.6%                       Kimi K2.6
+                                                                                                                                                                           2/2/4/4
+              GLM                                       33.3%                             GLM                                         39.5%
+         Dpsk-Flash                                     33.3%                           Claude                                        39.1%                   DeepSeek V4 Flash
+                                                26.7%                                                                       26.9%                                          6/4/3/2
+             Qwen                                                                        Qwen
+             MMax                            23.3%                                       MMax        -1.7%                                                              GLM 5.1
+                                                                                                                                                                           5/5/1/5
+                      0.0%   10.0%   20.0%    30.0%      40.0%      50.0%    60.0%                0.0%   10.0% 20.0% 30.0% 40.0% 50.0% 60.0%
+                        (c) Avg. EDDP%                                                              (d) Avg. ADP%                                               Claude Sonnet 4.6
+              GLM                                                         13.4%       GPT                                                    -2.5%                         3/6/2/6
+            Claude                                                      12.8%   Dpsk-Flash                                           -4.3%
+                                                                                                                                                                DeepSeek V4 Pro
+         Dpsk-Flash                                                 11.6%           Qwen                                         -5.1%                                     4/1/7/8
+              Kimi                                              10.3%                Kimi                                -7.4%
+                                            5.5%                                                                     -8.2%
+                                                                                                                                                                  Qwen 3.5 122B
+               GPT                                                                   GLM                                                                                   7/7/6/3
+             Qwen                       4.4%                                       Claude                           -8.4%
+          Dpsk-Pro                   3.8%                                           MMax                       -9.6%                                              MiniMax M2.7
+                                                                                                                                                                           8/8/8/7
+             MMax        -0.7%                                                   Dpsk-Pro            -11.9%
+
+                      0.0% 2.0% 4.0% 6.0% 8.0% 10.0% 12.0% 14.0% 16.0%                        -14.0% -12.0% -10.0% -8.0% -6.0% -4.0% -2.0%               0.0%
+
+
+Fig. 3. Main TicTacBench leaderboard from 30 tasks and coding agents driven by 8 frontier LLMs. Panel (a) ranks agents by post-PnR Timing Closure Rate.
+Panels (b)–(d) rank agents by Avg. ∆ WNS%, Avg. ∆ EDDP%, and Avg. ∆ ADP% relative to the suboptimal baseline; higher is better. Panel (f) reports
+the Reciprocal Rank Fusion (RRF) ranking across the four metrics.
+
+
+
+cannot run post-PnR STA since full physical implementation                                                    The Timing Closure Rate r is
+has substantial resource and time cost and is usually strictly                                                                         N
+limited and scheduled in real implementation flows. The                                                                             1 ∑︂ [︂ opt.,i  ]︂
+                                                                                                                             r=           1 tWNS = 0 × 100%,                           (1)
+typical agent workflow is: diagnose the baseline violation,                                                                         N i=1
+implement a synthesizable RTL transformation, check compile                                              which measures the overall fraction of benchmark tasks whose
+and equivalence, use and interpret pre-PnR STA, and submit                                               final optimized RTL is judged timing closed.
+the best final candidate.                                                                                   The Average WNS improvement rate is
+   We integrate full open source EDA toolchains for repro-                                                                                           N
+ducibility, including Yosys for synthesis, SymbiYosys for                                                                       1 ∑︂ topt.   sub.
+                                                                                                                                      WNS − tWNS
+                                                                                                                 Avg. ∆tWNS % =            sub.
+                                                                                                                                                  × 100%,                              (2)
+equivalence checking, LibreLane [18] with OpenROAD and                                                                          N i=1 0 − tWNS
+OpenSTA for full-flow post-PnR evaluation. For tasks without
+                                                                                                         which measures the average fraction of the baseline WNS
+a latency allowance, the optimized design must be equivalent
+                                                                                                         improved by the optimized design.
+to the baseline under the same output timing. For tasks with
+                                                                                                           The Average EDDP Improvement Rate is
+an explicit allowed additional latency, the equivalence checker
+                                                                                                                                               N
+aligns the allowed cycle shift and rejects any other latency                                                                            1 ∑︂ EDDPsub.
+                                                                                                                                                 i    − EDDPopt.
+                                                                                                                                                            i
+changes. After these checks pass, we rerun the full implemen-                                            Avg. ∆EDDP% =                                           × 100%,
+                                                                                                                                        N i=1    EDDPsub.
+                                                                                                                                                        i
+tation flow on the optimized RTL in a clean environment.
+                                                                                                              s.t.     EDDPi = Eavg,i × (tiECP )2 ,
+                                                                                                                                                                  (3)
+                                                                                                         which measures the average reduction in energy-delay-squared
+C. Evaluation Metrics                                                                                    product, an energy-performance metric in power-aware com-
+                                                                                                         puting [19]. We use this metric to characterize the timing-
+   We propose to use 4 dedicated metrics to characterize timing                                          prioritized power-timing tradeoff.
+closure results. We first define the effective clock period tECP .                                         The Average ADP Improvement Rate is
+For task i, let ti be the clock period specified by the constraint,                                                                             N
+                                                                                                                                         1 ∑︂ ADPsub. − ADPopt.
+and let tiWNS be the post-PnR WNS, where closed designs                                                       Avg. ∆ADP% =                       i         i
+                                                                                                                                                                × 100%,
+have tiWNS = 0. The effective clock period tECP is calculated                                                                            N i=1    ADPsub.
+                                                                                                                                                       i
+as tiECP = ti − tiWNS . This calculation intentionally ignores                                                   s.t.      ADPi = Ai × tiECP ,
+the positive part of slack and therefore measures relative to the                                                                                                (4)
+constraint rather than as unconstrained timing optimization. In                                          which measures the average reduction in area-delay product,
+the following metrics, sub. denotes the suboptimal baseline                                              an area-timing metric in logic synthesis [20]. We use this
+design, and opt. denotes the optimized design from the agent.                                            metric to characterize the area-timing tradeoff.
+                                                                TABLE II
+     O PTIMIZED POST-P N R PPA METRICS BY TASK AND MODEL . E ACH MODEL GROUP REPORTS WNS, CELL COUNT, AND POWER . G REEN GROUPS
+PARETO - DOMINATE THE CORRESPONDING PRE - OPTIMIZATION RESULT ACROSS THE THREE METRICS , WHILE RED GROUPS ARE PARETO - DOMINATED BY
+ IT. WNS IS IN NS , POWER IS IN M W, AND CELLS ARE COMPACTED TO CONTROL DENSITY. T HE LAST ROW REPORTS DOMINATE / DOMINATED COUNTS
+                                                             OVER ALL TASKS .
+
+      Task                      GPT                  Claude               Dpsk-Pro              Dpsk-Flash               Kimi                MiniMax                GLM                   Qwen
+                        WNS Cells Power WNS Cells Power WNS Cells Power WNS Cells Power WNS Cells Power WNS Cells Power WNS Cells Power WNS Cells Power
+      accu               +0.00 +893     1.37   -0.04 +1.17k   1.68   -0.01 +901      1.36   -0.05 +903     1.38   -0.03 +967     1.41   -0.17 +885     1.40   +0.00 +1.00k   1.46   -0.04 +827     1.30
+      add sub            -0.12 +353     0.38   -0.07 +599     0.37   -0.08 +592      0.38   -0.12 +353     0.38   -0.06 +367     0.45   -0.10 +611     0.37   -0.06 +367     0.45   -0.07 +323     0.37
+      adder 32bit        -0.21 +2.76k   0.64   -0.23 +2.65k   0.64   -0.14 +1.71k    0.49   -0.07 +1.53k   0.44   -0.07 +1.53k   0.44   -0.07 +1.53k   0.44   -0.11 +1.73k   0.49   -0.07 +1.53k   0.44
+      adder pipe 64bit -0.23 +11.8k     7.93   +0.00 +12.7k   8.09   -0.23 +11.8k    7.93   -0.23 +11.8k   7.93   -0.23 +11.8k   7.93   -0.33 +12.1k   7.76   -0.22 +12.2k   7.79   -0.23 +11.8k   7.93
+      adder select       +0.00 +1.29k   0.50   +0.00 +1.29k   0.50   +0.00 +1.29k    0.50   +0.00 +1.58k   0.60   +0.00 +1.29k   0.50   +0.00 +1.29k   0.50   +0.00 +1.29k   0.50   +0.00 +1.29k   0.50
+      addr calcu         -0.05 +1.14k   0.55   -0.07 +888     0.45   -0.09 +1.37k    0.51   -0.04 +813     0.37   -0.02 +928     0.59   -0.23 +839     0.64   -0.09 +1.35k   0.44   -0.02 +928     0.59
+      addr calcu pipe    +0.00 +1.19k   0.70   -0.05 +1.09k   0.69   -0.08 +2.14k    0.94   -0.08 +2.04k   0.73   -0.10 +1.61k   0.65   +0.00 +2.34k   1.13   -0.02 +2.35k   1.04   +0.00 +1.90k   1.23
+      alu                -1.05 +5.62k   0.47   -0.99 +4.76k   0.44   +0.00 +5.15k    0.56   -0.29 +5.58k   0.47   +0.00 +5.16k   0.60   -0.29 +5.58k   0.47   +0.00 +5.19k   0.59   -1.37 +6.08k   0.68
+      alu 64bit          +0.00 +3.69k   0.68   -0.49 +5.50k   0.83   +0.00 +4.77k    0.71   +0.00 +3.89k   0.59   +0.00 +3.43k   0.65   +0.00 +5.01k   0.72   -0.13 +5.13k   0.81   +0.00 +4.86k   0.71
+      calculation        +0.00 +1.91k   0.65   +0.00 +2.02k   0.55   +0.00 +2.26k    0.63   +0.00 +2.14k   0.66   +0.00 +2.09k   0.66   +0.00 +2.02k   0.55   +0.00 +2.01k   0.64   +0.00 +2.03k   0.61
+      calculation pipe   +0.00 +3.39k   1.38   +0.00 +3.21k   0.83   +0.00 +3.32k    0.97   +0.00 +2.77k   0.95   +0.00 +3.35k   0.93   +0.00 +3.21k   0.88   +0.00 +3.22k   0.81   +0.00 +3.57k   1.08
+      divider 16bit      +0.00 +7.03k   11.2   -0.18 +10.3k   246    -0.03 +10.3k    250    -0.18 +10.3k   246    +0.00 +10.3k   245    -0.18 +10.3k   246    -0.18 +10.3k   246    -0.18 +10.3k   246
+      divider 32bit      +0.00 +27.4k   94.5   +0.00 +35.5k   12.4   +0.00 +68.9k    306    +0.00 +35.6k   12.1   +0.00 +30.3k   209    +0.00 +27.8k   57.1   +0.00 +26.5k   53.0   -0.22 +49.6k   213
+      divider 32bit pipe +0.00 +44.2k   8.23   +0.00 +57.1k   63.3   -1.40 +56.6k    71.1   -1.78 +57.8k   77.0   -1.40 +56.6k   71.1   -2.67 +52.3k   296    -1.40 +56.6k   71.1   +0.00 +57.0k   35.0
+      fixed point adder +0.00 +1.52k    0.63   -0.20 +1.52k   0.64   -0.22 +1.55k    0.61   +0.00 +1.52k   0.61   -0.51 +1.84k   0.66   -0.29 +1.54k   0.60   -0.37 +1.55k   0.61   -0.22 +1.55k   0.61
+      float multi        -0.22 +17.1k   7.87   +0.00 +17.4k   7.79   +0.00 +17.5k    7.96   -0.32 +17.5k   8.46   -0.01 +17.7k   8.20   -0.39 +17.5k   7.84   -0.78 +18.2k   9.00   -0.32 +17.5k   8.46
+      float multi pipe   +0.00 +19.6k   10.1   +0.00 +20.8k   9.12   +0.00 +17.7k    8.80   -0.02 +17.6k   7.58   -0.88 +18.1k   8.69   +0.00 +18.5k   7.91   +0.00 +20.4k   9.42   -0.31 +17.6k   7.35
+      fsm                -0.15 +552     0.36   -0.18 +606     0.37   -0.13 +591      0.37   -0.15 +552     0.36   -0.04 +593     0.37   -0.71 +873     0.90   -0.11 +549     0.37   -0.15 +552     0.36
+      fsm encode         +0.00 +1.14k   1.33   -0.10 +1.73k   2.05   -0.19 +1.88k    2.17   -0.08 +2.01k   2.41   +0.00 +1.13k   0.92   -0.44 +1.73k   2.35   -0.10 +1.85k   0.78   +0.00 +721     1.08
+      gray               +0.00 +425     0.92   +0.00 +542     0.43   +0.00 +532      0.45   +0.00 +434     0.74   +0.00 +535     0.43   -0.23 +419     0.85   +0.00 +536     0.45   +0.00 +486     0.77
+      mac                -0.23 +5.78k   2.38     –     –        –    -0.20 +5.77k    2.42   -0.20 +5.77k   2.42   -0.30 +5.65k   2.43   -0.18 +5.19k   3.19   -0.23 +5.78k   2.38   -0.18 +5.19k   3.19
+      mac pipe           -0.13 +5.52k   2.52   -0.24 +5.53k   2.51   -0.13 +5.52k    2.52   -0.13 +5.52k   2.52   -0.13 +5.52k   2.52   -0.08 +5.25k   2.64   -0.13 +5.52k   2.52   -0.13 +5.52k   2.52
+      mul subexpression -0.28 +1.17k    0.52   -0.27 +1.17k   0.68   -0.27 +1.16k    0.60   +0.00 +1.19k   0.57   -0.27 +1.17k   0.68   -0.27 +1.17k   0.68   -0.27 +1.17k   0.68   -0.27 +1.17k   0.68
+      multi 16bit        +0.00 +1.76k   1.73   -0.14 +2.07k   2.08   +0.00 +1.88k    1.61   +0.00 +1.78k   1.68   +0.00 +1.79k   1.63   -0.35 +1.99k   1.93   -0.34 +2.14k   1.58   -0.42 +2.06k   1.96
+      multi pipe 4bit    +0.00 +361     0.95   +0.00 +318     0.95   -0.15 +347      1.06   +0.00 +319     0.96   +0.00 +330     0.95   +0.00 +305     1.00   +0.00 +321     0.95   -0.15 +347     1.06
+      multi pipe 8bit    +0.00 +2.01k   2.06   -0.34 +1.88k   2.15   -0.34 +1.88k    2.15   -0.34 +1.88k   2.15   -0.37 +1.87k   2.20   -1.73 +1.81k   2.15   -0.79 +2.02k   2.14   -0.51 +1.87k   2.12
+      radix2 div         -0.15 +2.49k   0.87   -0.12 +2.39k   0.87   -0.12 +2.39k    0.88   -0.12 +2.38k   0.89   -0.19 +2.38k   0.86   -0.19 +2.38k   0.86   -0.19 +2.38k   0.86   -0.19 +2.38k   0.86
+      serial2parallel    -0.05 +807     1.11   +0.00 +679     1.05   +0.00 +727      1.12   +0.00 +719     1.06   +0.00 +727     1.12   +0.00 +679     0.98   +0.00 +740     1.32   -0.01 +677     1.05
+      traffic light      -0.06 +975     0.54   +0.00 +822     0.55   +0.00 +680      1.22   +0.00 +665     0.49   +0.00 +986     0.59   -0.04 +681     1.37   +0.00 +229     0.30   -0.23 +738     0.51
+      width 8to16        -0.22 +921     2.85   -0.24 +981     2.25   -0.42 +851      2.46   -0.26 +817     2.58   -0.01 +1.94k   4.53   -0.26 +817     2.58   -0.21 +873     1.79   -0.26 +817     2.58
+      Dom./Dmd.                 18/3                   5/4                   3/2                   17/3                   5/3                  14/7                   3/4                   5/3
+
+
+
+
+                              IV. E XPERIMENTS                                                             critical paths on some tasks. The DeepSeek V4 Pro-based
+A. Experimental Setup                                                                                      agent shows a different pattern. It obtains the best Avg. ∆
+                                                                                                           WNS% but closes only 40.0% of tasks, suggesting that local
+   We evaluate coding agents driven by 8 frontier LLMs, in-                                                repairs often improve slack but do not always change the
+cluding GPT-5.4 [21], Claude Sonnet 4.6 [22], Kimi K2.6 [23],                                              design enough to meet the clock constraint.
+DeepSeek V4 Pro and Flash [24], MiniMax M2.7 [25], GLM
+5.1 FP8 [26], and Qwen 3.5 122B [27], on the 30 TicTacBench
+tasks using the evaluation setup in Section III. All reported                                                 The EDDP and ADP metrics further show the PPA cost
+closure, WNS, area, power, ADP, and EDDP values are                                                        of timing closure. Most agents improve EDDP, led by the
+computed from the post-PnR evaluation. The evaluation flow                                                 GLM 5.1 FP8-based agent at 13.4%, but every agent degrades
+is fully automated, reproducible, and open-sourced.                                                        ADP, from -2.5% for the GPT-5.4-based agent to -11.9% for
+                                                                                                           the DeepSeek V4 Pro-based agent. This indicates that current
+B. Overall Closure and QoR Results                                                                         agents primarily obtain timing improvement by spending area.
+   Figure 3 gives the main leaderboard. The strongest agent                                                By contrast, reducing delay through power-related mechanisms
+by Timing Closure Rate is the GPT-5.4-based agent, which                                                   is harder, because it often depends on lower switching activity,
+closes 53.3% of tasks, while the DeepSeek V4 Pro-based agent                                               clock-tree optimization, or voltage-frequency choices rather
+has the largest Avg. ∆ WNS%. The next group includes the                                                   than only local RTL rewriting.
+Kimi K2.6-, Claude Sonnet 4.6-, and DeepSeek V4 Pro-based
+agents, with Timing Closure Rates around 40%. The remaining                                                   Table II reports the PPA metrics, i.e., WNS, cell count, and
+agents close fewer tasks, and the MiniMax M2.7-based agent                                                 power of each agent on each design task. The table also counts
+is the only one whose Avg. ∆ WNS% is slightly negative.                                                    whether each optimized result Pareto-dominates, or is domi-
+These results show that even state-of-the-art agents close only                                            nated by, the corresponding suboptimal result across all three
+about half of TicTacBench at best; 23% of tasks are not closed                                             PPA metrics. The GPT-5.4-based agent has the most dominat-
+by any agent, and the optimizations from all agents almost                                                 ing outcomes (18/30), followed by the DeepSeek V4 Flash-
+always incur substantial area degradation.                                                                 based agent (17/30), while the MiniMax M2.7-based agent
+   The gap between Timing Closure Rate and Avg. ∆ WNS%                                                     has the most dominated outcomes (7/30). These counts show
+shows why both timing metrics are needed. The GPT-5.4-                                                     that LLM-driven agents are not consistently Pareto-improving
+based agent has the highest Timing Closure Rate, but its Avg.                                              optimizers: stronger agents can find favorable timing-area-
+∆ WNS% (48.7%) is lower than that of the DeepSeek V4 Pro-                                                  power trade-offs more often, but aggressive timing repairs
+based agent (55.9%) and the Kimi K2.6-based agent (53.0%).                                                 can also produce PPA regressions. Thus, current agents show
+This result is consistent with the GPT-5.4-based agent making                                              partial ability to navigate PPA trade-offs, but they still lack
+larger RTL rewrites: such rewrites can remove the original                                                 stable control over when a timing improvement justifies the
+bottleneck and close timing, but they can also introduce new                                               associated area or power cost.
+     reg [15:0] sum [3:0];
+                                                                                TABLE III
+     reg [15:0] mul_out_reg;
+                                                    C APABILITY AND FAILURE C ATEGORIES OF T RAJECTORY S EMANTIC
+     always @(posedge clk or negedge rst_n)
+                                                              A NALYSIS .
+         if (!rst_n) mul_out_reg <= 'd0;
+
+         else mul_out_reg <= sum[0] + sum[1] + sum[2] + sum[3];
+                                                                               Capability     Failure category             Meaning
+     reg [11:0] pair_sum0_reg;
+                                                                                            Fails to map key STA information such
+     reg [15:0] pair_sum1_reg;
+                                                Domain
+                                                                                              Inefficient STA
+                                                                                                                           as slack and critical paths to the RTL
+     wire [15:0] final_sum;
+                                                                  report-driven optimization
+     assign final_sum = {4'b0, pair_sum0_reg} + pair_sum1_reg;
+                Knowledge                                   level for report-driven optimization.
+     always @(posedge clk or negedge rst_n)
+                                                  Suboptimal datapath          Preserves excessively deep
+         if (!rst_n) pair_sum0_reg <= 'd0; 
+                                                  design                       arithmetic/datapath logic in the design.
+         else pair_sum0_reg <= {2'b0, sum0} + sum1;
+                                                                                                                           Fails to partition pipeline stages to cut
+                                                                                              Suboptimal pipeline
+                                                                               Architecture                                the critical combinational logic chain, or
+Fig. 4. Representative case from multi pipe 8bit. The failed rewrite leaves                   design
+                                                                               Design                                      introduces a new one.
+a wide addition cone on the critical stage. The successful rewrite moves the
+register boundary into the reduction tree.                                                                                 Introduces control-path logic such as
+                                                                                              Suboptimal
+                                                                                                                           decode or mux logic on critical datapath
+                                                                                              data/control-path design
+                                                                                                                           paths.
+                                                                                                                           Explores only locally suboptimal
+C. Case Study                                                                  Optimization Unsound exploration            solutions and lacks a plan for exploring
+                                                                               Flow                                        globally optimal solutions.
+   Figure 4 shows a representative case from multi pipe 8bit,                                                              Prematurely accepts weakly converged
+where the GPT-5.4-based agent is the only agent that closes                                   Unsound acceptance           results from pre-PnR STA, leading to
+post-PnR timing. The failed solution keeps the original final                                                              failure at post-PnR.
+
+reduction shape: four 16-bit partial sums are added in one
+registered stage before driving the output. This leaves a wide
+four-input addition cone on the critical stage, and the worst                     To apply trajectory semantic analysis, we export and pre-
+failed retained run has -1.73 ns post-PnR WNS with 35 setup                    serve 240 complete agent trajectories. Each trajectory contains
+violations.                                                                    the task input and final output, tool calls and tool results,
+   In contrast, the successful run performs a retiming instead                 and the agent’s reasoning traces during the run. We apply
+of simply appending a pipeline stage. It replaces the original                 trajectory semantic analysis using a lightweight analyst LLM,
+output-side reduction register with two pair-sum registers, then               specifically DeepSeek V4 Flash, to analyze the trajectories.
+computes the final sum from those registered pair sums. The                    We further compare runs horizontally across agents on the
+transformation shortens the critical stage from a four-input 16-               same task. For each failed run, we pair it with the same-
+bit reduction to narrower pair additions followed by one final                 task successful run that has the strongest post-PnR WNS. We
+add, which is the structural change needed for timing closure.                 then identify the semantic differences between trajectories that
+Findings of RQ1: We evaluated timing closure with metrics                      converge successfully and those that fail to converge, cluster
+of Timing Closure Rate, WNS improvement, EDDP improve-                         the differences, and obtain the 6 major failure categories.
+ment, and ADP improvement. Even the best agent can close                       B. Failure Mechanisms and Findings
+only 53.3% of tasks. Successful optimizations perform micro-
+architectural changes, such as retiming, pipeline-boundary                        Table III summarizes the taxonomy from the trajectory
+movement, and narrower arithmetic/reduction cones.                             semantic analysis. The 6 failure categories are grouped into
+                                                                               three capabilities: RTL domain knowledge, RTL architecture
+                   V. C APABILITIES A NALYSIS                                  design, and optimization flow.
+                                                                                  Finding 1: report-driven optimization strongly affects
+   This section analyzes the agent trajectories produced dur-                  timing-closure outcomes. Figure 5 shows that lower-closure
+ing ATC tasks to characterize agent capability beyond final                    agents generally fail more often on STA report-driven op-
+metrics. We first introduce the trajectory semantic analysis                   timization, while higher-closure agents fail less on this di-
+method used in this study, then aggregate its results to measure               mension. This pattern suggests that the ability to turn STA
+capability boundaries and failure distributions, leading to three              reports into targeted RTL changes has a strong effect on final
+findings about current agents’ ATC capability.                                 optimization success. The failed trajectories often begin by
+                                                                               reading substantial timing-report content, but the subsequent
+A. Trajectory Semantic Analysis                                                RTL edits are not derived from the reported critical paths,
+   Trajectory semantic analysis treats an agent execution tra-                 cells, or slack trends. Instead, the agent falls back to common
+jectory as behavioral evidence: the trajectory records how                     RTL optimization templates and repeats ineffective cycles of
+the agent reasons, acts through tools, observes feedback, and                  RTL editing and STA analysis. Successful trajectories, by
+updates its subsequent actions. It is especially useful for                    contrast, convert report evidence into targeted RTL changes.
+analyzing the ATC task process because an agent must read                      For example, in accu, the successful GPT-5.4-based agent run
+STA evidence, map the path back to RTL, choose a structural                    mapped the _148_/Q → _155_/D endpoint path to the
+rewrite, validate equivalence, and decide whether the candidate                accumulator carry/mux structure and rewrote that structure.
+has enough margin for physical implementation. The final                       Failed peers made plausible state or adder edits, but those
+post-PnR score observes only the outcome of this process.                      edits did not shorten the same post-PnR path.
+                                                                                    th                 pipeline design, or Suboptimal data/control-path design. The
+
+                  Failure Rate
+                                           pt.                        sig n       ol-              n
+                                     po                                              pa      esi g
+                                       rt o       ce
+                                                 tan      ration
+                                                               Da
+                                                                     de     contr       eli ne
+                                                                                                       correlations support the same view: Timing Closure Rate is
+                                 STA-      Ac          Ex        tap      Da                   d
+                                      re     cep         plo        ath     ta/    Pip                 negatively correlated with Inefficient STA report-driven opti-
+      MiniMax    72.7%                                                                                 mization (-0.70) and Optimization Flow failures (-0.41), but
+      Qwen       68.2%                                                                                 positively correlated with Suboptimal datapath design (+0.81).
+      DS Flash   59.1%
+      GLM        59.1%                                                                                 Findings of RQ2: The 6 failure categories expose missing ca-
+      Claude     50%                                                                                   pabilities of coding agents in RTL domain knowledge, RTL ar-
+      DS Pro     50%                                                                                   chitecture design, and optimization flow. Lower-closure agents
+      Kimi       45.5%
+      GPT-5.4    31.8%
+                                                                                                       mainly fail in report-driven optimization and optimization-
+                                                                                                       flow decisions, while higher-closure agents’ remaining failures
+          Enrichment
+                                    0.5x                 baseline                  2x                  concentrate in RTL design trade-offs.
+
+Fig. 5. Failure mechanism profiles by failed trajectories. The heatmap reports
+                                                                                                        VI. T IC TAC S KILL : AGENT S KILL FOR T IMING C LOSURE
+each agent’s failure-mechanism enrichment relative to the all-agent baseline.                             In this section, we introduce TicTacSkill, a plug-and-play
+                                                                                                       method designed to improve coding agents on ATC tasks.
+                                                                                                       We first describe how TicTacSkill derives SOPs for timing
+   Finding 2: agents often fail to move from local RTL edits                                           closure from the failure analysis identified in Section V. We
+to architectural optimization. Many failed trajectories make                                           then evaluate this method and show its improvement over the
+syntactically valid and functionally equivalent RTL changes,                                           original agent baseline.
+but the edits remain close to the original design and do not
+change the microarchitecture seen by post-PnR STA. This                                                A. Skill Design
+appears in 46.9% of the failures, where the failed run misses                                             Based on the analysis in Section V, we propose TicTacSkill,
+at least one architectural RTL change involving datapath                                               an agent skill that encodes the failure categories identified
+topology, pipeline partitioning, or control/decode placement.                                          in Section V as Standard Operating Procedures (SOPs) for
+Successful trajectories usually make a larger rewrite: ripple                                          ATC. Before solving a task, the coding agent receives this
+or carry-chain logic becomes a Kogge-Stone prefix adder,                                               skill that specifies how to inspect timing evidence, localize
+variable-shift logic becomes sequential shift-and-add, a wide                                          critical paths, propose RTL rewrites, validate candidates, and
+compare or subtract is narrowed, zero flags are computed                                               decide when to pivot.
+inside case branches before the result mux, or intermediate                                               Critical Path Localization. For Inefficient STA report-
+pipeline registers split a deep accumulation stage. Failed                                             driven optimization, the skill requires the agent to map slack,
+trajectories instead stay with local optimizations, such as                                            startpoint, endpoint, dominant operators, and suspected RTL
+rewriting the + operator as separate assignments, trying similar                                       assignments to the actual critical cone before editing.
+adder variants, changing case/assign style, or adding a register                                          Datapath Design. For Suboptimal datapath design, the skill
+that does not cut the actual critical path. In adder pipe 64bit,                                       requires the agent to state which measurable property the
+failed runs repeatedly explored similar adder variants and                                             candidate changes, such as logic depth, operation width, mux
+accepted the built-in plus operator as locally best under pre-                                         order, fanout, register boundary, or worst-path class.
+PnR checks. The successful run instead pre-registered gener-                                              Pipeline Design. For Suboptimal pipeline design, the skill
+ate/propagate values and used a Kogge-Stone prefix structure.                                          requires evidence that a new or moved register actually splits
+These examples show that repeated STA runs are not enough                                              the violating stage rather than only adding latency around the
+unless the agent can leave a local edit pattern and choose an                                          same combinational cone.
+architecturally stronger RTL design.                                                                      Control/Decode Placement. For Suboptimal data/control-
+   Finding 3: different agents fail at different stages of tim-                                        path design, it checks whether flags, comparisons, enables, and
+ing closure. Figure 5 shows that the failure categories identify                                       state/decode logic are serialized after wide data movement and
+which capability is missing in each agent. For lower-closure                                           therefore should be moved earlier or narrowed.
+agents, the main bottleneck is still the basic optimization loop.                                         Evidence-Driven Search. For Unsound exploration, it
+In the MiniMax M2.7, Qwen 3.5 122B, DeepSeek V4 Flash,                                                 forces each iteration to compare candidates by correctness,
+and GLM 5.1 FP8 based agents, 76.9%–81.25% of failures                                                 WNS/TNS, violation count, and worst-path evidence, and to
+fall into Inefficient STA report-driven optimization, Unsound                                          abandon repeated edits that do not change the limiter.
+exploration, or Unsound acceptance. These runs may read                                                   Pre-PnR/Post-PnR Mismatch. For Unsound acceptance,
+reports and produce valid RTL, but they do not reliably choose                                         it treats nominal pre-PnR closure as insufficient unless the
+the right RTL change, compare enough alternatives, or reject                                           candidate also has margin or a stated calibration to the final
+a candidate that is too weak for post-PnR closure. For higher-                                         post-PnR objective.
+closure agents, the remaining bottleneck is more often the
+RTL design choice itself: in the Claude Sonnet 4.6, DeepSeek                                           B. Experimental Results
+V4 Pro, GPT-5.4, and Kimi K2.6 based agents, 71.4%–81.8%                                                 We evaluate TicTacSkill by comparing each skill-enabled
+of failures fall into Suboptimal datapath design, Suboptimal                                           agent run against the corresponding original run under the
+                               TABLE IV                                                            R EFERENCES
+T IC TAC S KILL ABLATION ON THE THREE MODELS WITH SKILL - ENABLED
+RUNS . E ACH W / SKILL ROW IS PAIRED WITH THE SAME MODEL AND TASK     [1] C. E. Jimenez et al., “Swe-bench: Can language models resolve
+                         WITHOUT THE SKILL .                              real-world github issues?” in International Conference on Learning
+                                                                          Representations, 2024. [Online]. Available: https://openreview.net/
+                                                                          forum?id=VTF8yNQM66
+                                     Avg.       Avg.        Avg.
+  Model      Setting     Closure                                      [2] S. Liu et al., “Rtlcoder: Fully open-source and efficient llm-assisted
+                                   ∆ WNS%     ∆ EDDP%     ∆ ADP%
+                                                                          rtl code generation technique,” IEEE Transactions on Computer-Aided
+             w/o skill    53.3%      48.7%        5.5%      -2.5%         Design of Integrated Circuits and Systems, vol. 44, no. 4, pp. 1448–1461,
+  GPT-5.4    w/ skill     56.7%      66.4%       16.3%       -3.6%        2025.
+             w/o skill    23.3%       -1.7%      -0.7%      -9.6%     [3] W. Lv et al., “Vitad: Timing violation-aware debugging of rtl code using
+  MiniMax    w/ skill     36.7%      17.0%        -7.2%    -10.9%         large language models,” 2025.
+             w/o skill    33.3%      44.6%       11.6%       -4.3%    [4] X. Yao et al., “Rtlrewriter: Methodologies for large models aided rtl code
+  DeepSeek   w/ skill     43.3%      62.1%       14.9%      -3.0%         optimization,” in IEEE/ACM International Conference on Computer-
+                                                                          Aided Design, 2024, pp. 98:1–98:7.
+                                                                      [5] Y. Wang et al., “Symrtlo: Enhancing rtl code optimization with llms and
+                                                                          neuron-inspired symbolic reasoning,” 2025.
+same agent and task settings. Table IV reports the ablation           [6] N. Pinckney et al., “Revisiting VerilogEval: A Year of Improvements in
+results. Across all three agents, TicTacSkill improves Timing             Large-Language Models for Hardware Code Generation,” Feb. 2025.
+                                                                      [7] S. Liu et al., “Openllm-rtl: Open dataset and benchmark for llm-
+Closure Rate and Avg. ∆ WNS%, showing that the failure                    aided design rtl generation,” in Proceedings of the 43rd IEEE/ACM
+categories can be converted into useful guidance for timing               International Conference on Computer-Aided Design, 2025, pp. 60:1–
+repair. The GPT-5.4-based agent improves from 53.3% to                    60:9.
+                                                                      [8] A. Allam et al., “Rtl-repo: A benchmark for evaluating llms
+56.7% Timing Closure Rate and from 48.7% to 66.4% Avg.                    on large-scale rtl design projects,” 2024. [Online]. Available:
+∆ WNS%. The MiniMax M2.7-based agent shows the largest                    https://ieeexplore.ieee.org/document/11310982
+gain in Timing Closure Rate, increasing from 23.3% to 36.7%,          [9] N. Pinckney et al., “Comprehensive verilog design problems: A next-
+                                                                          generation benchmark dataset for evaluating large language models and
+while its Avg. ∆ WNS% moves from -1.7% to 17.0%. The                      agents on rtl design and verification,” 2025.
+DeepSeek V4 Flash-based agent improves from 33.3% to                 [10] Z. Fang, R. Chen, Y. Guo, H. Dai, and L. Wang, “Rtlbench: A multi-
+43.3% Timing Closure Rate and from 44.6% to 62.1% Avg.                    dimensional benchmark suite for evaluating llm-generated RTL code,” in
+                                                                          43rd IEEE International Conference on Computer Design, ICCD 2025,
+∆ WNS%.                                                                   Richardson, TX, USA, November 10-12, 2025. IEEE, 2025, pp. 566–
+Findings of RQ3: Targeting the observed failure categories                573.
+with explicit timing-closure SOPs improves agents’ Timing            [11] M. Liu et al., “Verilogeval: Evaluating large language models for verilog
+Closure Rate and WNS improvement on the tested agents.                    code generation,” 2023.
+                                                                     [12] Y. Lu et al., “A new benchmark for the appropriate evaluation of rtl
+This shows that the TicTacSkill pattern of turning trajectory-            code optimization,” 2026.
+derived failure analysis into a reusable agent skill is effective    [13] A. B. Kahng et al., Timing Closure. Springer Netherlands, 2011, pp.
+for improving agents’ timing-closure capability.                          219–264.
+                                                                     [14] C. E. Leiserson et al., “Retiming synchronous circuitry,” Algorithmica,
+             VII. D ISCUSSION AND L IMITATIONS                            vol. 6, no. 1, pp. 5–35, 1991.
+                                                                     [15] C. Chen et al., “E-syn: E-graph rewriting with technology-aware cost
+   TicTacBench is an initial benchmark with 30 timing-closure             functions for logic synthesis,” in Proceedings of the 61st ACM/IEEE
+tasks. This scale is sufficient for exposing clear capability             Design Automation Conference, 2024, pp. 124:1–124:6.
+                                                                     [16] V. S. Livramento et al., “Clock-tree-aware incremental timing-driven
+gaps and recurring failure mechanisms, but in future versions             placement,” ACM Transactions on Design Automation of Electronic
+we will expand the task set to improve statistical coverage               Systems, 2016.
+and support finer-grained comparisons across model families.         [17] W. Jiang et al., “Ir-aware eco timing optimization using reinforcement
+                                                                          learning,” in Proceedings of the ACM/IEEE Workshop on Machine
+The current task setting is also focused on single-module                 Learning for CAD, 2024, p. 7.
+combinational designs and single-clock sequential designs.           [18] M. Shalan and T. Edwards, “Building openlane: A 130nm openroad-
+This scope keeps the benchmark controllable and reproducible,             based tapeout-proven flow: Invited paper,” in 2020 IEEE/ACM Inter-
+                                                                          national Conference On Computer Aided Design (ICCAD), 2020, pp.
+but it does not yet cover the broader range of RTL timing-                1–6.
+closure cases found in larger designs. In future benchmark           [19] M. R. Stan and K. Skadron, “Power-aware computing,” Computer,
+extensions, we will include more diverse module structures,               vol. 36, no. 12, pp. 35–38, 2003.
+                                                                     [20] A. B. Chowdhury et al., “Invictus: Optimizing boolean logic circuit
+timing bottlenecks, and design patterns so that ATC evaluation            synthesis via synergistic learning and search,” 2023.
+can measure agent capability across a wider task distribution.       [21] OpenAI, “Introducing gpt-5.4,” 2026, published: 2026-03-05,
+                                                                          Accessed: 2026-03-30. [Online]. Available: https://openai.com/index/
+                         VIII. C ONCLUSION                                introducing-gpt-5-4/
+                                                                     [22] Anthropic, “Introducing claude sonnet 4.6,” 2026, published: 2026-02-
+   This paper introduces Agent-based Timing Closure as an                 17, Accessed: 2026-03-30. [Online]. Available: https://www.anthropic.
+evaluation target for coding agents that must repair RTL using            com/news/claude-sonnet-4-6
+timing evidence and are judged by post-PnR setup closure.            [23] Moonshot AI, “Kimi k2: Open agentic intelligence,” 2025.
+                                                                     [24] DeepSeek-AI, “Deepseek-v4: Towards highly efficient million-token
+Across more than 300 runs of coding agents driven by 8                    context intelligence,” DeepSeek-AI, Tech. Rep., 2026, technical report.
+frontier LLMs, the best agent closes only 53.3% of tasks,            [25] MiniMax, “The minimax-m2 series: Mini activations unleashing max
+showing that current agents still struggle to achieve real timing         real-world intelligence,” 2026.
+                                                                     [26] GLM-5-Team et al., “Glm-5: from vibe coding to agentic engineering,”
+closure. TicTacBench can serve as a foundation for moving                 2026.
+RTL agents from generating correct modules toward solving            [27] A. Yang et al., “Qwen3 technical report,” 2025.
+implementation-constrained hardware optimization tasks.
+

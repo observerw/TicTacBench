@@ -1,0 +1,20 @@
+{
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 40,
+  "PNR_SDC_FILE": "dir::pnr.sdc",
+  "SIGNOFF_SDC_FILE": "dir::pnr.sdc",
+  "FP_CORE_UTIL": 25,
+  "DIE_AREA": [
+    0,
+    0,
+    180,
+    180
+  ],
+  "CORE_AREA": [
+    20,
+    20,
+    160,
+    160
+  ],
+  "CLOCK_UNCERTAINTY_CONSTRAINT": 0
+}
