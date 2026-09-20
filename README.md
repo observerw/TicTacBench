@@ -26,6 +26,8 @@ post-PnR evaluation.
 
 ## Highlights
 
+![Method](assets/method.png)
+
 - Post-PnR timing closure is the primary target, rather than a synthesis-only
   proxy.
 - 30 arithmetic, datapath, control, and pipelined RTL optimization tasks.
@@ -36,6 +38,8 @@ post-PnR evaluation.
   failure modes.
 
 ## Benchmark Results
+
+![Leaderboard](assets/leaderboard.png)
 
 The paper evaluates coding agents driven by eight frontier LLMs over more than
 300 runs. The strongest baseline, GPT-5.4, closes **53.3%** of the tasks. Across
