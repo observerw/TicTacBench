@@ -17,6 +17,7 @@ post-PnR evaluation.
 
 > **Paper:**
 > [TicTacBench: Benchmarking Timing Closure Capabilities of Coding Agents](assets/TicTacBench.pdf)
+> · [arXiv:2609.23363](https://arxiv.org/abs/2609.23363)
 
 > **Special thanks:**
 >
@@ -181,12 +182,18 @@ are outside the present benchmark scope.
 
 ## Citation
 
-If you use TicTacBench in your research, please cite:
+If you use TicTacBench in your research, please cite
+[arXiv:2609.23363](https://arxiv.org/abs/2609.23363):
 
 ```bibtex
-@article{wang2026tictacbench,
-  title   = {TicTacBench: Benchmarking Timing Closure Capabilities of Coding Agents},
-  author  = {Wang, Bowei and Fang, Zhigang and Yang, Zhijie and Chen, Renzhi and Li, Shanshan and Wang, Lei},
-  year    = {2026}
+@misc{wang2026tictacbench,
+  title         = {TicTacBench: Benchmarking Timing Closure Capabilities of Coding Agents},
+  author        = {Wang, Bowei and Fang, Zhigang and Yang, Zhijie and Chen, Renzhi and Li, Shanshan and Wang, Lei},
+  year          = {2026},
+  eprint        = {2609.23363},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  doi           = {10.48550/arXiv.2609.23363},
+  url           = {https://arxiv.org/abs/2609.23363}
 }
 ```
